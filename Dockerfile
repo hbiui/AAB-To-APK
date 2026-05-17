@@ -1,27 +1,25 @@
 # ---- Build stage ----
-FROM node:22 AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
 # Copy backend source
 COPY backend/package.json backend/package-lock.json* ./
 
-# Install dependencies (use npm ci if lockfile exists, otherwise npm install)
+# Install dependencies
 RUN npm install --no-optional 2>&1 || npm install --legacy-peer-deps 2>&1
 
 COPY backend/ ./
 RUN npm run build
 
 # ---- Runtime stage ----
-# Use Eclipse Temurin JDK 17 on Debian slim (Node.js will be installed on top)
-FROM eclipse-temurin:17-jdk-jammy
+# Alpine-based: Node.js 22 + OpenJDK 17 (much smaller than Debian+JDK)
+FROM node:22-alpine
 
-# Install Node.js 22, unzip, curl
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl unzip ca-certificates \
-    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
+# Enable Alpine community repo and install Java 17 + utilities
+RUN ALPINE_VER=$(cut -d. -f1,2 /etc/alpine-release) \
+    && echo "https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VER}/community" >> /etc/apk/repositories \
+    && apk add --no-cache openjdk17 unzip curl
 
 WORKDIR /app
 
