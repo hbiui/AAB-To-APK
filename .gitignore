@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env.local
+.env.production
+.env
+*.log
+.DS_Store
+Thumbs.db
+uploads/
+outputs/
+backend/bundletool/bundletool.jar

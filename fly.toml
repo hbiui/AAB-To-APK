@@ -1,0 +1,23 @@
+app = "aab-to-apk"
+primary_region = "nrt"  # Tokyo — closest to China mainland
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  BUNDLETOOL_PATH = "/app/bundletool/bundletool.jar"
+  KEYSTORE_PATH = "/app/bundletool/debug.keystore"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

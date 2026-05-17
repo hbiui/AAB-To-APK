@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: aab-to-apk-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # Render free tier: 512MB RAM, 0.1 CPU, spins down after 15min inactivity
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "8080"
+      - key: BUNDLETOOL_PATH
+        value: /app/bundletool/bundletool.jar
+      - key: KEYSTORE_PATH
+        value: /app/bundletool/debug.keystore
+    healthCheckPath: /api/healthz
+    autoDeploy: true

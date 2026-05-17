@@ -1,0 +1,9 @@
+frontend/
+frontend/node_modules/
+backend/dist/
+backend/node_modules/
+.git/
+.gitignore
+*.md
+.workbuddy/
+node_modules/
