@@ -1,16 +1,13 @@
 # ---- Build stage ----
-FROM node:22-slim AS builder
+FROM node:22 AS builder
 
 WORKDIR /app
 
-# Install build tools needed for native modules (esbuild)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 make g++ \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copy backend source
-COPY backend/package.json ./
-RUN npm install
+COPY backend/package.json backend/package-lock.json* ./
+
+# Install dependencies (use npm ci if lockfile exists, otherwise npm install)
+RUN npm install --no-optional 2>&1 || npm install --legacy-peer-deps 2>&1
 
 COPY backend/ ./
 RUN npm run build
@@ -28,14 +25,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy built server
+# Copy built server and production node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 
-# Setup bundletool directory
+# Setup bundletool directory - copy keystore, download bundletool.jar
 COPY backend/bundletool/debug.keystore ./bundletool/debug.keystore
 
-# Download bundletool.jar (always, since .gitignore excludes the 31MB jar)
 RUN echo "Downloading bundletool.jar..." && \
     curl -fsSL -o ./bundletool/bundletool.jar \
       https://github.com/google/bundletool/releases/download/1.17.2/bundletool-all-1.17.2.jar
