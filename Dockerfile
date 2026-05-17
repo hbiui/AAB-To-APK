@@ -3,6 +3,11 @@ FROM node:22-slim AS builder
 
 WORKDIR /app
 
+# Install build tools needed for native modules (esbuild)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy backend source
 COPY backend/package.json ./
 RUN npm install
