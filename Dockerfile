@@ -27,18 +27,19 @@ WORKDIR /app
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 
-# Copy bundletool assets (keystore)
-COPY backend/bundletool/ ./bundletool/
+# Setup bundletool directory
+COPY backend/bundletool/debug.keystore ./bundletool/debug.keystore
 
-# Download bundletool.jar if not already present in the repo
-RUN if [ ! -f "./bundletool/bundletool.jar" ]; then \
-      echo "Downloading bundletool.jar..." && \
-      curl -fsSL -o ./bundletool/bundletool.jar \
-        https://github.com/google/bundletool/releases/download/1.17.2/bundletool-all-1.17.2.jar; \
-    fi
+# Download bundletool.jar (always, since .gitignore excludes the 31MB jar)
+RUN echo "Downloading bundletool.jar..." && \
+    curl -fsSL -o ./bundletool/bundletool.jar \
+      https://github.com/google/bundletool/releases/download/1.17.2/bundletool-all-1.17.2.jar
 
 # Verify Java and bundletool are working
 RUN java -version && java -jar ./bundletool/bundletool.jar version
+
+# Create temp directories for file processing
+RUN mkdir -p /app/uploads /app/outputs
 
 ENV NODE_ENV=production
 ENV PORT=8080
