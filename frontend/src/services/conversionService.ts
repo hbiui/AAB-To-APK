@@ -1,6 +1,14 @@
 import { ApkInfo } from '../store/conversionStore';
+import { getAccessToken } from '../lib/auth';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+
+function authHeaders(): Record<string, string> {
+  const token = getAccessToken();
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (token) headers['x-access-token'] = token;
+  return headers;
+}
 
 export interface ConversionResult {
   success: boolean;
@@ -29,7 +37,7 @@ export async function getUploadUrl(filename: string): Promise<UploadUrlResponse>
   const encodedName = encodeURIComponent(filename);
   const response = await fetch(`${API_BASE_URL}/api/upload-url?filename=${encodedName}`, {
     method: 'GET',
-    headers: { Accept: 'application/json' },
+    headers: authHeaders(),
   });
 
   if (!response.ok) {
@@ -95,7 +103,7 @@ export async function triggerConversion(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Accept: 'application/json',
+      ...authHeaders(),
     },
     body: JSON.stringify({ key }),
   });

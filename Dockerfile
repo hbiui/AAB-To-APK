@@ -19,7 +19,7 @@ FROM node:22-alpine
 # Enable Alpine community repo and install Java 17 + utilities
 RUN ALPINE_VER=$(cut -d. -f1,2 /etc/alpine-release) \
     && echo "https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VER}/community" >> /etc/apk/repositories \
-    && apk add --no-cache openjdk17 unzip curl
+    && apk add --no-cache openjdk17 unzip curl gcompat libgcc
 
 WORKDIR /app
 

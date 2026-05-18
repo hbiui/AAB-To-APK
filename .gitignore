@@ -9,3 +9,6 @@ Thumbs.db
 uploads/
 outputs/
 backend/bundletool/bundletool.jar
+nul
+.workbuddy/
+FC-配置步骤.txt
