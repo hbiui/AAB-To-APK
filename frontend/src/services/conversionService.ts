@@ -9,100 +9,151 @@ export interface ConversionResult {
   error?: string;
 }
 
+export interface UploadUrlResponse {
+  uploadUrl: string;
+  key: string;
+}
+
 export interface ConversionResponse {
   success: boolean;
   downloadUrl?: string;
   fileName?: string;
   fileSize?: number;
-  apk?: string;
   error?: string;
 }
 
+/**
+ * Step 1: Get a presigned upload URL from backend
+ */
+export async function getUploadUrl(filename: string): Promise<UploadUrlResponse> {
+  const encodedName = encodeURIComponent(filename);
+  const response = await fetch(`${API_BASE_URL}/api/upload-url?filename=${encodedName}`, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.error || '获取上传地址失败');
+  }
+
+  return await response.json();
+}
+
+/**
+ * Step 2: Upload file directly to OSS using presigned URL (PUT)
+ * Tracks upload progress via XMLHttpRequest
+ */
+export async function uploadToOss(
+  file: File,
+  uploadUrl: string,
+  onProgress: (progress: number) => void
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) {
+        const percent = Math.round((event.loaded / event.total) * 100);
+        // Map to 10-50% range
+        onProgress(10 + Math.round(percent * 0.4));
+      }
+    });
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        reject(new Error(`上传失败: HTTP ${xhr.status}`));
+      }
+    });
+
+    xhr.addEventListener('error', () => {
+      reject(new Error('上传过程中网络错误'));
+    });
+
+    xhr.addEventListener('abort', () => {
+      reject(new Error('上传已取消'));
+    });
+
+    xhr.open('PUT', uploadUrl);
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.send(file);
+  });
+}
+
+/**
+ * Step 3: Call backend to convert the AAB on OSS
+ */
+export async function triggerConversion(
+  key: string,
+  onProgress: (progress: number) => void
+): Promise<ConversionResponse> {
+  onProgress(55);
+
+  const response = await fetch(`${API_BASE_URL}/api/convert`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({ key }),
+  });
+
+  onProgress(90);
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.error || '转换失败');
+  }
+
+  return await response.json();
+}
+
+/**
+ * Main flow: upload → convert → get download URL
+ */
 export async function convertAabToApk(
   file: File,
   onProgress: (progress: number) => void
 ): Promise<ConversionResult> {
-  const formData = new FormData();
-  formData.append('file', file);
-
   try {
+    // Step 1: Get presigned upload URL
+    onProgress(5);
+    const { uploadUrl, key } = await getUploadUrl(file.name);
     onProgress(10);
 
-    const response = await fetch(`${API_BASE_URL}/api/convert`, {
-      method: 'POST',
-      body: formData,
-    });
-
+    // Step 2: Upload to OSS (PUT directly)
+    await uploadToOss(file, uploadUrl, onProgress);
     onProgress(50);
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Conversion failed');
-    }
-
-    onProgress(90);
-
-    const data: ConversionResponse = await response.json();
-
+    // Step 3: Trigger conversion
+    const data = await triggerConversion(key, onProgress);
     onProgress(100);
 
-    if (data.success) {
-      if (data.downloadUrl) {
-        const fullDownloadUrl = data.downloadUrl.startsWith('http')
-          ? data.downloadUrl
-          : `${API_BASE_URL}${data.downloadUrl}`;
-
-        return {
-          success: true,
-          downloadUrl: fullDownloadUrl,
-          apks: [
-            {
-              name: data.fileName || file.name.replace('.aab', '.apk'),
-              url: fullDownloadUrl,
-              size: data.fileSize || 0,
-            },
-          ],
-        };
-      } else if (data.apk) {
-        const blob = base64ToBlob(data.apk, 'application/vnd.android.package-archive');
-        const url = URL.createObjectURL(blob);
-        const fileName = data.fileName || file.name.replace('.aab', '.apk');
-
-        return {
-          success: true,
-          downloadUrl: url,
-          apks: [
-            {
-              name: fileName,
-              url: url,
-              size: data.fileSize || blob.size,
-            },
-          ],
-        };
-      }
+    if (data.success && data.downloadUrl) {
+      const fileName = data.fileName || file.name.replace(/\.aab$/i, '.apk');
+      return {
+        success: true,
+        downloadUrl: data.downloadUrl,
+        apks: [
+          {
+            name: fileName,
+            url: data.downloadUrl,
+            size: data.fileSize || 0,
+          },
+        ],
+      };
     }
 
-    throw new Error(data.error || 'Conversion failed');
-
+    throw new Error(data.error || '转换失败');
   } catch (error) {
     console.error('Conversion error:', error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Network error. Please try again.',
+      error: error instanceof Error ? error.message : '网络错误，请重试',
     };
   }
-}
-
-function base64ToBlob(base64: string, mimeType: string): Blob {
-  const byteString = atob(base64);
-  const arrayBuffer = new ArrayBuffer(byteString.length);
-  const uint8Array = new Uint8Array(arrayBuffer);
-  
-  for (let i = 0; i < byteString.length; i++) {
-    uint8Array[i] = byteString.charCodeAt(i);
-  }
-  
-  return new Blob([arrayBuffer], { type: mimeType });
 }
 
 export function formatFileSize(bytes: number): string {
@@ -116,7 +167,7 @@ export function formatFileSize(bytes: number): string {
 export async function downloadApk(url: string, fileName: string): Promise<void> {
   try {
     const response = await fetch(url);
-    if (!response.ok) throw new Error(`Download failed: ${response.status}`);
+    if (!response.ok) throw new Error(`下载失败: ${response.status}`);
     const blob = await response.blob();
     const objectUrl = URL.createObjectURL(blob);
     const link = document.createElement('a');

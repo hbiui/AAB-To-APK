@@ -81,7 +81,7 @@ export function UploadZone() {
 
     convertAabToApk(file, (prog) => {
       setProgress(prog);
-      if (prog > 30) {
+      if (prog > 55) {
         setStatus('converting');
       }
     }).then((result) => {
