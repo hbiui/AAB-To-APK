@@ -7,11 +7,11 @@ import path from "path";
 import os from "os";
 import {
   getSignedUploadUrl,
-  getSignedDownloadUrl,
   uploadFile,
   downloadToFile,
   deleteObject,
   getObjectUrl,
+  getObjectStream,
 } from "../lib/oss";
 import { logger } from "../lib/logger";
 
@@ -278,24 +278,14 @@ router.post("/convert", async (req: Request, res: Response) => {
     return;
   }
 
-  // ---- Step 5: 生成预签名下载 URL ----
+  // ---- Step 5: 生成后端代理下载路径 ----
   const fileName = originalName.replace(/\.aab$/i, ".apk");
-  let downloadUrl: string;
-  try {
-    downloadUrl = getSignedDownloadUrl(outputKey, fileName, 3600);
-  } catch (err) {
-    logger.error({ err, outputKey }, "生成下载 URL 失败");
-    cleanup();
-    res
-      .status(500)
-      .json({ success: false, error: "生成下载链接失败，请重试" });
-    return;
-  }
+  const downloadPath = `/api/download/${taskId}/${fileName}`;
 
   // ---- Step 6: 返回结果 ----
   res.json({
     success: true,
-    downloadUrl,
+    downloadPath,
     fileName,
     fileSize: stat.size,
   });
@@ -305,12 +295,13 @@ router.post("/convert", async (req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /download/:taskId/:filename — 重定向到 OSS 预签名下载 URL
+// GET /download/:taskId/:filename — 后端代理下载 OSS 文件流
+// 避免 APK 文件被 OSS 公开端点拦截（ApkDownloadForbidden）
 // ---------------------------------------------------------------------------
-router.get("/download/:taskId/:filename", (req: Request, res: Response) => {
+router.get("/download/:taskId/:filename", async (req: Request, res: Response) => {
   const { taskId, filename } = req.params;
 
-  if (!/^[a-f0-9-]{36}$/.test(taskId) || !/^[\w.-]+\.apk$/.test(filename)) {
+  if (!/^[a-f0-9-]{36}$/.test(taskId) || !/^[\w\s.-]+\.apk$/.test(filename)) {
     res.status(400).json({ error: "无效路径" });
     return;
   }
@@ -318,11 +309,28 @@ router.get("/download/:taskId/:filename", (req: Request, res: Response) => {
   const key = `outputs/${taskId}/${filename}`;
 
   try {
-    const downloadUrl = getSignedDownloadUrl(key, filename, 3600);
-    res.redirect(302, downloadUrl);
+    const { stream, contentType, size } = await getObjectStream(key);
+
+    res.setHeader("Content-Type", contentType || "application/vnd.android.package-archive");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    if (size) {
+      res.setHeader("Content-Length", String(size));
+    }
+
+    stream.pipe(res);
+
+    stream.on("error", (err: Error) => {
+      logger.error({ err, key }, "OSS 流读取错误");
+      // 如果 headers 还没发完，尝试结束响应
+      if (!res.headersSent) {
+        res.status(500).json({ error: "文件读取失败" });
+      } else {
+        res.destroy();
+      }
+    });
   } catch (err) {
-    logger.error({ err, key }, "生成下载 URL 失败");
-    res.status(500).json({ error: "生成下载链接失败" });
+    logger.error({ err, key }, "代理下载失败");
+    res.status(500).json({ error: "下载失败，文件可能已过期" });
   }
 });
 

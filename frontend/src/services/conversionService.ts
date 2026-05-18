@@ -24,7 +24,7 @@ export interface UploadUrlResponse {
 
 export interface ConversionResponse {
   success: boolean;
-  downloadUrl?: string;
+  downloadPath?: string;
   fileName?: string;
   fileSize?: number;
   error?: string;
@@ -139,15 +139,16 @@ export async function convertAabToApk(
     const data = await triggerConversion(key, onProgress);
     onProgress(100);
 
-    if (data.success && data.downloadUrl) {
+    if (data.success && data.downloadPath) {
       const fileName = data.fileName || file.name.replace(/\.aab$/i, '.apk');
+      const proxyUrl = `${API_BASE_URL}${data.downloadPath}`;
       return {
         success: true,
-        downloadUrl: data.downloadUrl,
+        downloadUrl: proxyUrl,
         apks: [
           {
             name: fileName,
-            url: data.downloadUrl,
+            url: proxyUrl,
             size: data.fileSize || 0,
           },
         ],
@@ -174,7 +175,9 @@ export function formatFileSize(bytes: number): string {
 
 export async function downloadApk(url: string, fileName: string): Promise<void> {
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: authHeaders(),
+    });
     if (!response.ok) throw new Error(`下载失败: ${response.status}`);
     const blob = await response.blob();
     const objectUrl = URL.createObjectURL(blob);

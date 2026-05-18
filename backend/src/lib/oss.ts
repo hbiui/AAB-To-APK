@@ -107,6 +107,26 @@ export async function downloadToFile(
 }
 
 /**
+ * 获取 OSS 对象可读流（用于后端代理下载）
+ * @param key OSS 对象 key
+ * @returns 包含可读流和元数据的对象
+ */
+export async function getObjectStream(
+  key: string,
+): Promise<{ stream: NodeJS.ReadableStream; contentType?: string; size?: number }> {
+  const client = getOssClient();
+  const result = await client.getStream(key);
+  // ali-oss 的 res 中 headers 可能包含 content-type / content-length
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const headers = (result as any).res?.headers || {};
+  return {
+    stream: result.stream,
+    contentType: headers["content-type"] || "application/octet-stream",
+    size: headers["content-length"] ? parseInt(headers["content-length"], 10) : undefined,
+  };
+}
+
+/**
  * 删除 OSS 对象（忽略错误，仅记录日志）
  * @param key OSS 对象 key
  */
