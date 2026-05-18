@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
-import { exec } from "child_process";
+import { execSync, exec } from "child_process";
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs";
 import path from "path";
@@ -23,6 +23,47 @@ const keystorePath =
 
 fs.mkdirSync(uploadsDir, { recursive: true });
 fs.mkdirSync(outputsDir, { recursive: true });
+
+// Debug endpoint to inspect container environment
+router.get("/debug", (_req, res) => {
+  try {
+    const diskInfo = execSync("df -h /tmp 2>/dev/null || echo 'df not available'", {
+      encoding: "utf-8",
+      timeout: 5000,
+    });
+    const javaVersion = execSync("java -version 2>&1", {
+      encoding: "utf-8",
+      timeout: 5000,
+    });
+    const bundletoolCheck = fs.existsSync(bundletoolPath)
+      ? `exists (${Math.round(fs.statSync(bundletoolPath).size / 1024 / 1024)}MB)`
+      : "MISSING";
+    const keystoreCheck = fs.existsSync(keystorePath) ? "exists" : "MISSING";
+    const tmpSpace = execSync(
+      "du -sh /tmp 2>/dev/null; echo '---'; df -m /tmp 2>/dev/null || df -m / 2>/dev/null",
+      { encoding: "utf-8", timeout: 5000 }
+    );
+
+    res.json({
+      tmpBase,
+      uploadsDir,
+      outputsDir,
+      bundletoolPath,
+      bundletoolCheck,
+      keystorePath,
+      keystoreCheck,
+      diskInfo: diskInfo.trim(),
+      tmpSpace: tmpSpace.trim(),
+      javaVersion: javaVersion.trim().split("\n").slice(0, 3),
+      memTotal: `${Math.round(os.totalmem() / 1024 / 1024)}MB`,
+      memFree: `${Math.round(os.freemem() / 1024 / 1024)}MB`,
+    });
+  } catch (err: unknown) {
+    res.status(500).json({
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
 
 const upload = multer({
   dest: uploadsDir,
@@ -79,8 +120,8 @@ router.post("/convert", upload.single("file"), (req, res) => {
         ? "文件不是有效的 AAB 格式"
         : detail.includes("Version must match")
         ? "AAB 文件格式无效，请使用 Android Studio 生成的 AAB 文件"
-        : `构建失败：${detail.split("\n")[0]}`;
-      res.status(500).json({ success: false, error: friendly });
+        : `构建失败：${detail.split("\n").slice(0, 3).join(" | ")}`;
+      res.status(500).json({ success: false, error: friendly, detail });
       return;
     }
 
